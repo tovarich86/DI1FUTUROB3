@@ -3,18 +3,32 @@ import pandas as pd
 from bs4 import BeautifulSoup
 import streamlit as st
 from io import BytesIO
+from datetime import datetime, timedelta
+
+# Função para obter a data de ontem
+def get_yesterday():
+    return (datetime.now() - timedelta(1)).date()
 
 # Interface do usuário no Streamlit
 st.title("Consulta DI Futuro")
 
-data = st.date_input("Selecione a data:").strftime("%d/%m/%Y")
+# Configurar o widget de data para mostrar dd/mm/aaaa e iniciar com a data de ontem
+yesterday = get_yesterday()
+data = st.date_input(
+    "Selecione a data:",
+    value=yesterday,
+    format="DD/MM/YYYY"
+)
+
+# Converter a data selecionada para o formato dd/mm/aaaa
+data_formatada = data.strftime("%d/%m/%Y")
 
 # Gerar a URL do Excel dinamicamente
 def gerar_url_excel(data, mercadoria="DI1"):
     base_url = "https://www2.bmf.com.br/pages/portal/bmfbovespa/boletim1/SistemaPregao_excel1.asp"
     return f"{base_url}?Data={data}&Mercadoria={mercadoria}&XLS=true"
 
-url_excel = gerar_url_excel(data)
+url_excel = gerar_url_excel(data_formatada)
 
 # Criar uma sessão para manter autenticação
 session = requests.Session()
@@ -83,7 +97,7 @@ if response.status_code == 200:
         df_tabela7 = df_tabela7[colunas_disponiveis]
 
         # Adicionar coluna com a data de referência
-        df_tabela7.insert(0, "DATA REFERÊNCIA", data)
+        df_tabela7.insert(0, "DATA REFERÊNCIA", data_formatada)
 
         # Criar um buffer de bytes para salvar o Excel
         output = BytesIO()
@@ -94,7 +108,7 @@ if response.status_code == 200:
         st.download_button(
             label="Baixar Excel",
             data=output.getvalue(),
-            file_name=f"DI_FUTURO_{data.replace('/', '-')}.xlsx",
+            file_name=f"DI_FUTURO_{data_formatada.replace('/', '-')}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
         
