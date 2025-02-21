@@ -31,7 +31,7 @@ session.get("https://www2.bmf.com.br/pages/portal/bmfbovespa/boletim1/SistemaPre
 response = session.get(url_excel, headers=headers)
 
 # Nome do arquivo salvo
-downloaded_file = f"DI_FUTURO_{data.replace('/', '-')}.xls"
+downloaded_file = f"DI_FUTURO_{data.replace('/', '-')}.xlsx"
 
 # Verificar se o download foi bem-sucedido
 if response.status_code == 200:
@@ -76,8 +76,11 @@ if response.status_code == 200:
         df_tabela7.to_excel(output_file_tabela7, index=False, header=True)
         print(f"Arquivo Excel da Tabela 7 salvo com sucesso: {output_file_tabela7}")
         
-        # Criar um link para o usuário baixar o arquivo e acessar o site
-        st.write(f"[Clique aqui para baixar o Excel](sandbox:/mnt/data/{output_file_tabela7})")
+        # Criar um botão para baixar o arquivo
+        with open(output_file_tabela7, "rb") as file:
+            st.download_button(label="Baixar Excel", data=file, file_name=output_file_tabela7, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        
+        # Criar um link para acessar o site e capturar evidência
         st.write(f"[Clique aqui para acessar o site e capturar evidência]({url_excel.replace('XLS=true', '')})")
     else:
         print("Erro: A Tabela 7 não foi encontrada no HTML extraído.")
