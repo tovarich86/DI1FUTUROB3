@@ -30,6 +30,11 @@ def gerar_url_excel(data, mercadoria="DI1"):
 
 url_excel = gerar_url_excel(data_formatada)
 
+def gerar_url_evidencia(data, mercadoria="DI1"):
+    base_url = "https://www2.bmf.com.br/pages/portal/bmfbovespa/boletim1/SistemaPregao1.asp"
+    params = "pagetype=pop&caminho=Resumo%20Estat%EDstico%20-%20Sistema%20Preg%E3o"
+    return f"{base_url}?{params}&Data={data}&Mercadoria={mercadoria}"
+
 # Criar uma sessão para manter autenticação
 session = requests.Session()
 headers = {
@@ -113,7 +118,11 @@ if response.status_code == 200:
         )
         
         # Criar um link para acessar o site e capturar evidência
-        st.write(f"[Clique aqui para acessar o site e capturar evidência]({url_excel.replace('XLS=true', '')})")
+        # Gerar a URL correta para o link de evidência
+        url_evidencia = gerar_url_evidencia(data_formatada)
+        
+        # Criar um link para acessar o site e capturar evidência
+        st.write(f"[Clique aqui para acessar o site e capturar evidência]({url_evidencia})")
     else:
         st.error("Erro: A Tabela 7 não foi encontrada no HTML extraído.")
 else:
