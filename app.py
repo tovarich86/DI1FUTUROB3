@@ -25,7 +25,7 @@ data_formatada = data.strftime("%d/%m/%Y")
 
 # Gerar a URL do Excel dinamicamente
 def gerar_url_excel(data, mercadoria="DI1"):
-    base_url = "https://www2.bmf.com.br/pages/portal/bmfbovespa/boletim1/SistemaPregao1.asp?pagetype=pop&caminho=Resumo%20Estat%EDstico%20-%20Sistema%20Preg%E3o&"
+    base_url = "https://www2.bmf.com.br/pages/portal/bmfbovespa/boletim1/SistemaPregao1.asp"
     return f"{base_url}?Data={data}&Mercadoria={mercadoria}&XLS=true"
 
 url_excel = gerar_url_excel(data_formatada)
