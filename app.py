@@ -137,4 +137,82 @@ else: # modo_consulta == 'Importar Arquivo'
     if uploaded_file:
         try:
             if uploaded_file.name.endswith('.csv'):
-                df_datas = pd.read_csv
+                df_datas = pd.read_csv(uploaded_file)
+            else:
+                df_datas = pd.read_excel(uploaded_file)
+
+            coluna_data_nome = next((col for col in df_datas.columns if col.lower() == 'data'), None)
+            if not coluna_data_nome:
+                st.sidebar.error("Coluna 'Data' não encontrada no arquivo.")
+            else:
+                datas_validas = pd.to_datetime(df_datas[coluna_data_nome], errors='coerce').dropna().unique()
+                datas_a_processar = sorted([d.to_pydatetime() for d in datas_validas])
+                st.sidebar.success(f"Encontradas {len(datas_a_processar)} datas únicas e válidas.")
+        except Exception as e:
+            st.sidebar.error(f"Erro ao ler o arquivo: {e}")
+
+# --- Botão de Processamento e Lógica Principal (sem alterações) ---
+
+if st.sidebar.button("Processar Dados", type="primary"):
+    if not datas_a_processar:
+        st.warning("Nenhuma data válida para processar. Por favor, selecione uma data ou carregue um arquivo.")
+    else:
+        dataframes_consolidados = []
+        erros = []
+        
+        session = requests.Session()
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
+        session.headers.update(headers)
+
+        st.info(f"Iniciando processamento de {len(datas_a_processar)} data(s)...")
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+
+        for i, data in enumerate(datas_a_processar):
+            data_str = data.strftime("%d/%m/%Y")
+            status_text.text(f"Processando data: {data_str} ({i+1}/{len(datas_a_processar)})")
+            
+            df, status = processar_data(data, session)
+            
+            if df is not None and not df.empty:
+                dataframes_consolidados.append(df)
+            else:
+                if "Dados não encontrados" not in status:
+                    erros.append({'data': data_str, 'motivo': status})
+
+            progress_bar.progress((i + 1) / len(datas_a_processar))
+
+        status_text.text("Processamento concluído!")
+
+        st.success(f"**{len(dataframes_consolidados)}** data(s) processada(s) com sucesso.")
+        
+        if erros:
+            st.warning(f"**{len(erros)}** data(s) falharam.")
+            with st.expander("Clique aqui para ver os detalhes dos erros"):
+                st.table(erros)
+
+        if dataframes_consolidados:
+            df_final = pd.concat(dataframes_consolidados, ignore_index=True)
+            
+            st.subheader("Amostra dos Dados Consolidados")
+            st.dataframe(df_final.head())
+
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df_final.to_excel(writer, index=False, sheet_name='DI_Futuro_Consolidado')
+            
+            if len(datas_a_processar) == 1:
+                nome_arquivo = f"DI_FUTURO_{datas_a_processar[0].strftime('%Y-%m-%d')}.xlsx"
+            else:
+                nome_arquivo = f"DI_FUTURO_CONSOLIDADO_{datetime.now().strftime('%Y%m%d')}.xlsx"
+
+            st.download_button(
+                label="📥 Baixar Planilha Excel",
+                data=output.getvalue(),
+                file_name=nome_arquivo,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            )
+        else:
+            st.error("Nenhum dado foi extraído com sucesso para a(s) data(s) informada(s).")
+else:
+    st.info("Selecione o modo de consulta, forneça a data ou o arquivo e clique em 'Processar Dados' na barra lateral.")
