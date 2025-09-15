@@ -67,24 +67,22 @@ def processar_data(data, session):
         }
         df = df.rename(columns=mapa_colunas)
         
-        colunas_desejadas = ["DATA REFERÊNCIA", "MÊS/ANO VENCIMENTO", "VENCIMENTO", "CONTRATOS EM ABERTO", 
+        # ### ALTERAÇÃO 1: Colunas "VENCIMENTO" e "PRECO AJUSTE" removidas da lista ###
+        colunas_desejadas = ["DATA REFERÊNCIA", "MÊS/ANO VENCIMENTO", "CONTRATOS EM ABERTO", 
                              "VOLUME", "PRECO ABERTURA", "PRECO MINIMO", "PRECO MAXIMO", 
-                             "PRECO MEDIO", "ULTIMO PRECO", "PRECO AJUSTE"]
+                             "PRECO MEDIO", "ULTIMO PRECO"]
         
-        # Garantir que todas as colunas desejadas existam, mesmo que vazias
         for col in colunas_desejadas:
             if col not in df.columns:
                 df[col] = None
         
-        df = df[colunas_desejadas] # Reordenar e selecionar
+        df = df[colunas_desejadas]
 
-        # --- CONVERSÃO DE TIPOS PARA FORMATAÇÃO CORRETA ---
         df['DATA REFERÊNCIA'] = pd.to_datetime(df['DATA REFERÊNCIA'], format='%d/%m/%Y')
         colunas_numericas = ['CONTRATOS EM ABERTO', 'VOLUME', 'PRECO ABERTURA', 'PRECO MINIMO', 
-                             'PRECO MAXIMO', 'PRECO MEDIO', 'ULTIMO PRECO', 'PRECO AJUSTE']
+                             'PRECO MAXIMO', 'PRECO MEDIO', 'ULTIMO PRECO']
 
         for col in colunas_numericas:
-            # Converte para numérico, forçando erros a virarem NaN (não um número)
             df[col] = pd.to_numeric(df[col], errors='coerce')
 
         return df, "Sucesso"
@@ -96,7 +94,7 @@ def processar_data(data, session):
     except Exception as e:
         return None, f"Ocorreu um erro inesperado: {e}"
 
-# --- Interface do Usuário (sem alterações) ---
+# --- Interface do Usuário ---
 st.sidebar.header("Modo de Consulta")
 modo_consulta = st.sidebar.radio(
     "Escolha como fornecer as datas:",
@@ -130,7 +128,6 @@ if st.sidebar.button("Processar Dados", type="primary"):
     if not datas_a_processar:
         st.warning("Nenhuma data válida para processar.")
     else:
-        # (Lógica de processamento em lote e barra de progresso - sem alterações)
         dataframes_consolidados = []
         erros = []
         session = requests.Session()
@@ -148,7 +145,6 @@ if st.sidebar.button("Processar Dados", type="primary"):
             progress_bar.progress((i + 1) / len(datas_a_processar))
         status_text.text("Processamento concluído!")
 
-        # --- Exibição dos Resultados ---
         st.success(f"**{len(dataframes_consolidados)}** data(s) processada(s) com sucesso.")
         if erros:
             st.warning(f"**{len(erros)}** data(s) falharam.")
@@ -159,42 +155,30 @@ if st.sidebar.button("Processar Dados", type="primary"):
             st.subheader("Amostra dos Dados Consolidados")
             st.dataframe(df_final.head())
 
-            # --- GERAÇÃO DO EXCEL COM FORMATAÇÃO PT-BR ---
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_final.to_excel(writer, index=False, sheet_name='DI_Futuro_Consolidado')
                 
-                # Acessa o workbook e a worksheet do xlsxwriter
                 workbook  = writer.book
                 worksheet = writer.sheets['DI_Futuro_Consolidado']
-
-                # Cria os formatos
+                
                 formato_data = workbook.add_format({'num_format': 'dd/mm/yyyy'})
                 formato_numero = workbook.add_format({'num_format': '#,##0.00'})
                 formato_inteiro = workbook.add_format({'num_format': '#,##0'})
 
-                # Mapeia os formatos para cada coluna pelo seu NOME
+                # ### ALTERAÇÃO 2: "PRECO AJUSTE" removido do dicionário de formatos ###
                 formatos_colunas = {
-                    'DATA REFERÊNCIA': formato_data,
-                    'CONTRATOS EM ABERTO': formato_inteiro,
-                    'VOLUME': formato_inteiro,
-                    'PRECO ABERTURA': formato_numero,
-                    'PRECO MINIMO': formato_numero,
-                    'PRECO MAXIMO': formato_numero,
-                    'PRECO MEDIO': formato_numero,
-                    'ULTIMO PRECO': formato_numero,
-                    'PRECO AJUSTE': formato_numero,
+                    'DATA REFERÊNCIA': formato_data, 'CONTRATOS EM ABERTO': formato_inteiro,
+                    'VOLUME': formato_inteiro, 'PRECO ABERTURA': formato_numero,
+                    'PRECO MINIMO': formato_numero, 'PRECO MAXIMO': formato_numero,
+                    'PRECO MEDIO': formato_numero, 'ULTIMO PRECO': formato_numero
                 }
 
-                # Encontra o índice de cada coluna e aplica o formato
                 for col_name, formato in formatos_colunas.items():
                     if col_name in df_final.columns:
                         col_idx = df_final.columns.get_loc(col_name)
-                        # Aplica o formato à coluna (da linha 2 até o fim)
-                        # O +1 é porque as colunas no xlsxwriter são base 0
                         worksheet.set_column(col_idx, col_idx, width=15, cell_format=formato)
 
-            # --- Botão de Download ---
             nome_arquivo = f"DI_FUTURO_{datas_a_processar[0].strftime('%Y-%m-%d')}.xlsx" if len(datas_a_processar) == 1 else f"DI_FUTURO_CONSOLIDADO_{datetime.now().strftime('%Y%m%d')}.xlsx"
             st.download_button(
                 label="📥 Baixar Planilha Excel Formatada",
@@ -206,8 +190,9 @@ if st.sidebar.button("Processar Dados", type="primary"):
             st.error("Nenhum dado foi extraído com sucesso.")
 else:
     st.info("Selecione o modo de consulta, forneça a data ou o arquivo e clique em 'Processar Dados' na barra lateral.")
-# --- RODAPÉ COM A FONTE DOS DADOS ---
-st.markdown("---") # Adiciona uma linha horizontal para separar visualmente
+
+# --- Rodapé ---
+st.markdown("---") 
 st.markdown(
     "**Fonte dos dados:** [B3 / BMF&Bovespa - Sistema de Pregão - Resumo Estatístico](https://www2.bmf.com.br/pages/portal/bmfbovespa/boletim1/SistemaPregao1.asp)"
 )
