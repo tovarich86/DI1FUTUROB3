@@ -1,9 +1,11 @@
 import requests
 import pandas as pd
-from bs4 import BeautifulSoup # BeautifulSoup ainda é útil para checagem inicial
+from bs4 import BeautifulSoup
 import streamlit as st
 from io import BytesIO
 from datetime import datetime
+# A biblioteca xlsxwriter é necessária para a formatação
+# Instale com: pip install XlsxWriter
 
 # --- Configuração da Página do Streamlit ---
 st.set_page_config(page_title="Consulta DI Futuro (B3)", layout="wide")
@@ -16,13 +18,10 @@ def gerar_url_excel(data_formatada, mercadoria="DI1"):
     base_url = "https://www2.bmf.com.br/pages/portal/bmfbovespa/boletim1/SistemaPregao_excel1.asp"
     return f"{base_url}?Data={data_formatada}&Mercadoria={mercadoria}&XLS=true"
 
-# ==============================================================================
-# FUNÇÃO ATUALIZADA PARA SER MAIS ROBUSTA
-# ==============================================================================
 def processar_data(data, session):
     """
     Busca, extrai e processa os dados de DI Futuro para uma única data.
-    Agora usa pd.read_html para maior robustez contra mudanças na estrutura da tabela.
+    Usa pd.read_html para robustez.
     """
     data_formatada = data.strftime("%d/%m/%Y")
     url_excel = gerar_url_excel(data_formatada)
@@ -30,37 +29,23 @@ def processar_data(data, session):
     try:
         response = session.get(url_excel, timeout=20)
         response.raise_for_status()
-
-        # Usamos pandas para ler TODAS as tabelas da página de uma só vez.
-        # Ele lida com colunas inconsistentes de forma muito mais inteligente.
-        tabelas_dfs = pd.read_html(
-            response.content, 
-            encoding='latin1', 
-            decimal=',', 
-            thousands='.'
-        )
+        
+        tabelas_dfs = pd.read_html(response.content, encoding='latin1', decimal=',', thousands='.')
 
         if len(tabelas_dfs) < 7:
             return None, "Dados não encontrados (Tabela 7 ausente). Provavelmente um feriado ou fim de semana."
 
-        # A tabela de interesse ainda é a sétima (índice 6).
         df = tabelas_dfs[6]
-
-        # Limpeza do DataFrame lido pelo pd.read_html:
-        # 1. A segunda linha (índice 1) contém os nomes corretos das colunas.
+        
         if len(df) < 2:
             return None, "A tabela de dados encontrada está vazia ou mal formatada."
         
         df.columns = df.iloc[1]
-        
-        # 2. Remover as duas primeiras linhas, que eram cabeçalhos.
         df = df.iloc[2:].reset_index(drop=True)
         
-        # 3. Remover a última linha se for um totalizador (verificando se VENC. é nulo)
         if df.iloc[-1, 0] is None or pd.isna(df.iloc[-1, 0]):
             df = df.iloc[:-1]
 
-        # O restante do código de transformação continua o mesmo
         df.insert(0, "DATA REFERÊNCIA", data_formatada)
 
         def converter_vencimento(di_code):
@@ -71,7 +56,6 @@ def processar_data(data, session):
                 return f"{meses[di_code[0]]}/{ano}"
             return ""
 
-        # A coluna com o código de vencimento agora é a primeira do df original.
         df.insert(1, "MÊS/ANO VENCIMENTO", df.iloc[:, 1].apply(converter_vencimento))
 
         mapa_colunas = {
@@ -87,132 +71,144 @@ def processar_data(data, session):
                              "VOLUME", "PRECO ABERTURA", "PRECO MINIMO", "PRECO MAXIMO", 
                              "PRECO MEDIO", "ULTIMO PRECO", "PRECO AJUSTE"]
         
+        # Garantir que todas as colunas desejadas existam, mesmo que vazias
         for col in colunas_desejadas:
             if col not in df.columns:
-                df[col] = None # Adiciona coluna se não existir
+                df[col] = None
         
-        return df[colunas_desejadas], "Sucesso"
+        df = df[colunas_desejadas] # Reordenar e selecionar
+
+        # --- CONVERSÃO DE TIPOS PARA FORMATAÇÃO CORRETA ---
+        df['DATA REFERÊNCIA'] = pd.to_datetime(df['DATA REFERÊNCIA'], format='%d/%m/%Y')
+        colunas_numericas = ['CONTRATOS EM ABERTO', 'VOLUME', 'PRECO ABERTURA', 'PRECO MINIMO', 
+                             'PRECO MAXIMO', 'PRECO MEDIO', 'ULTIMO PRECO', 'PRECO AJUSTE']
+
+        for col in colunas_numericas:
+            # Converte para numérico, forçando erros a virarem NaN (não um número)
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+
+        return df, "Sucesso"
 
     except requests.exceptions.RequestException as e:
         return None, f"Erro de conexão: {e}"
-    except IndexError:
-         return None, f"Erro ao processar a tabela. Pode ter menos de 7 tabelas na página."
-    except ValueError as e:
-        return None, f"Erro de valor ao processar a tabela, possivelmente vazia: {e}"
+    except (IndexError, ValueError) as e:
+         return None, f"Erro ao processar a tabela. Pode estar mal formatada ou vazia. Detalhe: {e}"
     except Exception as e:
         return None, f"Ocorreu um erro inesperado: {e}"
 
 # --- Interface do Usuário (sem alterações) ---
-
 st.sidebar.header("Modo de Consulta")
 modo_consulta = st.sidebar.radio(
     "Escolha como fornecer as datas:",
     ('Data Única', 'Importar Arquivo')
 )
-
 datas_a_processar = []
 
 if modo_consulta == 'Data Única':
     st.sidebar.subheader("Selecione a Data")
-    data_unica = st.sidebar.date_input(
-        "Data:",
-        value=datetime.now(),
-        format="DD/MM/YYYY"
-    )
-    if data_unica:
-        datas_a_processar = [data_unica]
-
-else: # modo_consulta == 'Importar Arquivo'
+    data_unica = st.sidebar.date_input("Data:", value=datetime.now(), format="DD/MM/YYYY")
+    if data_unica: datas_a_processar = [data_unica]
+else:
     st.sidebar.subheader("Selecione o Arquivo")
-    uploaded_file = st.sidebar.file_uploader(
-        "Carregue um arquivo (CSV, XLS, XLSX)",
-        type=['csv', 'xls', 'xlsx']
-    )
-    st.sidebar.markdown("""
-    **Instruções:**
-    1. Crie um arquivo Excel ou CSV.
-    2. Adicione uma coluna chamada **`Data`**.
-    3. Preencha com as datas e salve o arquivo.
-    """)
+    uploaded_file = st.sidebar.file_uploader("Carregue (CSV, XLS, XLSX)", type=['csv', 'xls', 'xlsx'])
+    st.sidebar.markdown("**Instruções:** O arquivo deve ter uma coluna chamada **`Data`**.")
     if uploaded_file:
         try:
-            if uploaded_file.name.endswith('.csv'):
-                df_datas = pd.read_csv(uploaded_file)
+            df_datas = pd.read_excel(uploaded_file) if not uploaded_file.name.endswith('.csv') else pd.read_csv(uploaded_file)
+            col_data = next((c for c in df_datas.columns if c.lower() == 'data'), None)
+            if not col_data:
+                st.sidebar.error("Coluna 'Data' não encontrada.")
             else:
-                df_datas = pd.read_excel(uploaded_file)
-
-            coluna_data_nome = next((col for col in df_datas.columns if col.lower() == 'data'), None)
-            if not coluna_data_nome:
-                st.sidebar.error("Coluna 'Data' não encontrada no arquivo.")
-            else:
-                datas_validas = pd.to_datetime(df_datas[coluna_data_nome], errors='coerce').dropna().unique()
+                datas_validas = pd.to_datetime(df_datas[col_data], errors='coerce').dropna().unique()
                 datas_a_processar = sorted([d.to_pydatetime() for d in datas_validas])
-                st.sidebar.success(f"Encontradas {len(datas_a_processar)} datas únicas e válidas.")
+                st.sidebar.success(f"Encontradas {len(datas_a_processar)} datas válidas.")
         except Exception as e:
             st.sidebar.error(f"Erro ao ler o arquivo: {e}")
 
-# --- Botão de Processamento e Lógica Principal (sem alterações) ---
-
+# --- Botão de Processamento e Lógica Principal ---
 if st.sidebar.button("Processar Dados", type="primary"):
     if not datas_a_processar:
-        st.warning("Nenhuma data válida para processar. Por favor, selecione uma data ou carregue um arquivo.")
+        st.warning("Nenhuma data válida para processar.")
     else:
+        # (Lógica de processamento em lote e barra de progresso - sem alterações)
         dataframes_consolidados = []
         erros = []
-        
         session = requests.Session()
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
-        session.headers.update(headers)
-
+        session.headers.update({"User-Agent": "Mozilla/5.0"})
         st.info(f"Iniciando processamento de {len(datas_a_processar)} data(s)...")
         progress_bar = st.progress(0)
         status_text = st.empty()
-
         for i, data in enumerate(datas_a_processar):
             data_str = data.strftime("%d/%m/%Y")
-            status_text.text(f"Processando data: {data_str} ({i+1}/{len(datas_a_processar)})")
-            
+            status_text.text(f"Processando: {data_str} ({i+1}/{len(datas_a_processar)})")
             df, status = processar_data(data, session)
-            
-            if df is not None and not df.empty:
-                dataframes_consolidados.append(df)
+            if df is not None: dataframes_consolidados.append(df)
             else:
-                if "Dados não encontrados" not in status:
-                    erros.append({'data': data_str, 'motivo': status})
-
+                if "Dados não encontrados" not in status: erros.append({'data': data_str, 'motivo': status})
             progress_bar.progress((i + 1) / len(datas_a_processar))
-
         status_text.text("Processamento concluído!")
 
+        # --- Exibição dos Resultados ---
         st.success(f"**{len(dataframes_consolidados)}** data(s) processada(s) com sucesso.")
-        
         if erros:
             st.warning(f"**{len(erros)}** data(s) falharam.")
-            with st.expander("Clique aqui para ver os detalhes dos erros"):
-                st.table(erros)
+            with st.expander("Ver detalhes dos erros"): st.table(erros)
 
         if dataframes_consolidados:
             df_final = pd.concat(dataframes_consolidados, ignore_index=True)
-            
             st.subheader("Amostra dos Dados Consolidados")
             st.dataframe(df_final.head())
 
+            # --- GERAÇÃO DO EXCEL COM FORMATAÇÃO PT-BR ---
             output = BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_final.to_excel(writer, index=False, sheet_name='DI_Futuro_Consolidado')
-            
-            if len(datas_a_processar) == 1:
-                nome_arquivo = f"DI_FUTURO_{datas_a_processar[0].strftime('%Y-%m-%d')}.xlsx"
-            else:
-                nome_arquivo = f"DI_FUTURO_CONSOLIDADO_{datetime.now().strftime('%Y%m%d')}.xlsx"
+                
+                # Acessa o workbook e a worksheet do xlsxwriter
+                workbook  = writer.book
+                worksheet = writer.sheets['DI_Futuro_Consolidado']
 
+                # Cria os formatos
+                formato_data = workbook.add_format({'num_format': 'dd/mm/yyyy'})
+                formato_numero = workbook.add_format({'num_format': '#,##0.00'})
+                formato_inteiro = workbook.add_format({'num_format': '#,##0'})
+
+                # Mapeia os formatos para cada coluna pelo seu NOME
+                formatos_colunas = {
+                    'DATA REFERÊNCIA': formato_data,
+                    'CONTRATOS EM ABERTO': formato_inteiro,
+                    'VOLUME': formato_inteiro,
+                    'PRECO ABERTURA': formato_numero,
+                    'PRECO MINIMO': formato_numero,
+                    'PRECO MAXIMO': formato_numero,
+                    'PRECO MEDIO': formato_numero,
+                    'ULTIMO PRECO': formato_numero,
+                    'PRECO AJUSTE': formato_numero,
+                }
+
+                # Encontra o índice de cada coluna e aplica o formato
+                for col_name, formato in formatos_colunas.items():
+                    if col_name in df_final.columns:
+                        col_idx = df_final.columns.get_loc(col_name)
+                        # Aplica o formato à coluna (da linha 2 até o fim)
+                        # O +1 é porque as colunas no xlsxwriter são base 0
+                        worksheet.set_column(col_idx, col_idx, width=15, cell_format=formato)
+
+            # --- Botão de Download ---
+            nome_arquivo = f"DI_FUTURO_{datas_a_processar[0].strftime('%Y-%m-%d')}.xlsx" if len(datas_a_processar) == 1 else f"DI_FUTURO_CONSOLIDADO_{datetime.now().strftime('%Y%m%d')}.xlsx"
             st.download_button(
-                label="📥 Baixar Planilha Excel",
+                label="📥 Baixar Planilha Excel Formatada",
                 data=output.getvalue(),
                 file_name=nome_arquivo,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
         else:
-            st.error("Nenhum dado foi extraído com sucesso para a(s) data(s) informada(s).")
+            st.error("Nenhum dado foi extraído com sucesso.")
 else:
     st.info("Selecione o modo de consulta, forneça a data ou o arquivo e clique em 'Processar Dados' na barra lateral.")
+# --- RODAPÉ COM A FONTE DOS DADOS ---
+st.markdown("---") # Adiciona uma linha horizontal para separar visualmente
+st.markdown(
+    "**Fonte dos dados:** [B3 / BMF&Bovespa - Sistema de Pregão - Resumo Estatístico](https://www2.bmf.com.br/pages/portal/bmfbovespa/boletim1/SistemaPregao1.asp)"
+)
+st.caption("Esta é uma ferramenta independente e não possui vínculo oficial com a B3.")
