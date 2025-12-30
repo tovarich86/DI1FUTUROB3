@@ -132,6 +132,6 @@ if st.sidebar.button("Baixar Dados", type="primary"):
 # --- Rodapé (Mensagem da Fonte de Dados) ---
 st.markdown("---")
 st.markdown(
-    "**Fonte dos dados:** [B3 - Taxas Referenciais (DI)](https://www.b3.com.br/pt_br/market-data-e-indices/servicos-de-dados/market-data/consultas/mercado-de-derivativos/taxas-referenciais/taxas-referenciais-di/)"
+    "**Fonte dos dados:** [B3 - Taxas Referenciais (DI)](https://www.b3.com.br/pt_br/market-data-e-indices/servicos-de-dados/market-data/consultas/boletim-diario/boletim-diario-do-mercado/)"
 )
-st.caption("Esta é uma ferramenta independente para consulta de dados públicos disponibilizados pela B3. Os dados são obtidos via API de Taxas Referenciais.")
+st.caption("Esta é uma ferramenta independente para consulta de dados públicos disponibilizados pela B3.")
