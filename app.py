@@ -128,3 +128,10 @@ if st.sidebar.button("Baixar Dados", type="primary"):
                 file_name=f"Taxas_DI_B3_{datetime.now().strftime('%Y%m%d')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
             )
+
+# --- Rodapé (Mensagem da Fonte de Dados) ---
+st.markdown("---")
+st.markdown(
+    "**Fonte dos dados:** [B3 - Taxas Referenciais (DI)](https://www.b3.com.br/pt_br/market-data-e-indices/servicos-de-dados/market-data/consultas/mercado-de-derivativos/taxas-referenciais/taxas-referenciais-di/)"
+)
+st.caption("Esta é uma ferramenta independente para consulta de dados públicos disponibilizados pela B3. Os dados são obtidos via API de Taxas Referenciais.")
